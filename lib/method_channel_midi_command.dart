@@ -10,11 +10,14 @@ const EventChannel _rxChannel =
     EventChannel('plugins.invisiblewrench.com/flutter_midi_command/rx_channel');
 const EventChannel _setupChannel = EventChannel(
     'plugins.invisiblewrench.com/flutter_midi_command/setup_channel');
+const EventChannel _bluetoothStateChannel = EventChannel(
+    'plugins.invisiblewrench.com/flutter_midi_command/bluetooth_central_state');
 
 /// An implementation of [MidiCommandPlatform] that uses method channels.
 class MethodChannelMidiCommand extends MidiCommandPlatform {
   Stream<MidiPacket>? _rxStream;
   Stream<String>? _setupStream;
+  Stream<String>? _bluetoothStateStream;
 
   /// Returns a list of found MIDI devices.
   @override
@@ -37,6 +40,36 @@ class MethodChannelMidiCommand extends MidiCommandPlatform {
       return MidiPort(portMap["id"] as int, type);
     });
     return ports.toList(growable: false);
+  }
+
+  /// Starts bluetooth subsystem.
+  ///
+  /// Shows an alert requesting access rights for bluetooth.
+  @override
+  Future<void> startBluetoothCentral() async {
+    try {
+      await _methodChannel.invokeMethod('startBluetoothCentral');
+    } on PlatformException catch (e) {
+      throw e.message!;
+    }
+  }
+
+  /// Stream firing events whenever a change in bluetooth central state happens
+  @override
+  Stream<String>? get onBluetoothStateChanged {
+    _bluetoothStateStream ??=
+        _bluetoothStateChannel.receiveBroadcastStream().cast<String>();
+    return _bluetoothStateStream;
+  }
+
+  /// Returns the current state of the bluetooth subsystem
+  @override
+  Future<String> bluetoothState() async {
+    try {
+      return await _methodChannel.invokeMethod('bluetoothState');
+    } on PlatformException catch (e) {
+      throw e.message!;
+    }
   }
 
   /// Starts scanning for BLE MIDI devices.
@@ -94,9 +127,9 @@ class MethodChannelMidiCommand extends MidiCommandPlatform {
     // print("get on midi data");
     _rxStream ??= _rxChannel.receiveBroadcastStream().map<MidiPacket>((d) {
       var dd = d["device"];
-      // print("device data $dd");
+      print("device data $dd");
       var device = MidiDevice(
-          dd['id'], dd["name"] ?? "N/A", dd["type"], dd["connected"] ?? true);
+          dd['id'], dd["name"] ?? 'N/A', dd["type"], dd["connected"] == "true");
       return MidiPacket(Uint8List.fromList(List<int>.from(d["data"])),
           d["timestamp"] as int, device);
     });
@@ -110,5 +143,20 @@ class MethodChannelMidiCommand extends MidiCommandPlatform {
   Stream<String>? get onMidiSetupChanged {
     _setupStream ??= _setupChannel.receiveBroadcastStream().cast<String>();
     return _setupStream;
+  }
+
+  /// Creates a virtual MIDI source
+  ///
+  /// The virtual MIDI source appears as a virtual port in other apps.
+  /// Currently only supported on iOS.
+  @override
+  void addVirtualDevice({String? name}) {
+    _methodChannel.invokeMethod('addVirtualDevice', {"name": name});
+  }
+
+  /// Removes a previously addd virtual MIDI source.
+  @override
+  void removeVirtualDevice({String? name}) {
+    _methodChannel.invokeMethod('removeVirtualDevice', {"name": name});
   }
 }
